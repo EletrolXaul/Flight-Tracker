@@ -59,7 +59,7 @@ const FlightCard: React.FC<FlightCardProps> = ({
   };
 
   return (
-    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-lg p-6 relative`}>
+    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-lg p-3 sm:p-6 relative`}>
       {/* Bottone preferiti migliorato */}
       <button
         onClick={onToggleFavorite}
@@ -100,23 +100,27 @@ const FlightCard: React.FC<FlightCardProps> = ({
       </div>
 
       {/* Informazioni sul volo */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-4">
+        {/* Sezione partenza */}
         <div className="col-span-1">
-          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            Partenza
-          </p>
-          <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {flight.departure.iata}
-          </p>
-          <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            {formatTime(flight.departure.scheduled)}
-          </p>
-          <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            {flight.departure.airport}
-          </p>
+          <div className="space-y-1">
+            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Partenza
+            </p>
+            <p className={`text-base sm:text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              {flight.departure.iata}
+            </p>
+            <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              {formatTime(flight.departure.scheduled)}
+            </p>
+            <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} truncate`}>
+              {flight.departure.airport}
+            </p>
+          </div>
         </div>
 
-        <div className="col-span-1 flex flex-col items-center justify-center">
+        {/* Sezione durata */}
+        <div className="hidden sm:flex flex-col items-center justify-center col-span-1">
           <div className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
             {calculateFlightDuration()}
           </div>
@@ -127,26 +131,36 @@ const FlightCard: React.FC<FlightCardProps> = ({
           </div>
         </div>
 
-        <div className="col-span-1 text-right">
-          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            Arrivo
-          </p>
-          <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {flight.arrival.iata}
-          </p>
-          <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            {formatTime(flight.arrival.scheduled)}
-          </p>
-          <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            {flight.arrival.airport}
-          </p>
+        {/* Sezione arrivo */}
+        <div className="col-span-1">
+          <div className="space-y-1">
+            <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Arrivo
+            </p>
+            <p className={`text-base sm:text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              {flight.arrival.iata}
+            </p>
+            <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              {formatTime(flight.arrival.scheduled)}
+            </p>
+            <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} truncate`}>
+              {flight.arrival.airport}
+            </p>
+          </div>
+        </div>
+
+        {/* Durata del volo per mobile */}
+        <div className="col-span-2 sm:hidden text-center py-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+          <div className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            Durata: {calculateFlightDuration()}
+          </div>
         </div>
       </div>
 
-      {/* Time zone info */}
-      <div className="text-xs text-center mb-4">
+      {/* Time zone info con responsive migliorato */}
+      <div className="text-xs text-center">
         <span className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-          Time zones: {flight.departure.timezone} → {flight.arrival.timezone}
+          {flight.departure.timezone} → {flight.arrival.timezone}
         </span>
       </div>
     </div>

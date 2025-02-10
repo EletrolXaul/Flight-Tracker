@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plane, Home, Moon, Sun, Heart, X } from 'lucide-react';
 import SearchBar from './components/SearchBar';
 import FlightCard from './components/FlightCard';
