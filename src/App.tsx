@@ -282,7 +282,19 @@ function App() {
 
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => setShowFavorites(!showFavorites)}
+                onClick={() => {
+                  setShowFavorites(!showFavorites);
+                  setSearchQuery(''); // Reset della search query
+                  if (!showFavorites) {
+                    // Se stiamo aprendo i preferiti, resetta anche i risultati della ricerca
+                    const cached = localStorage.getItem(CACHE_KEY);
+                    if (cached) {
+                      const { data } = JSON.parse(cached);
+                      const validFlights = data.filter((f: Flight | null) => isValidFlight(f));
+                      setFlights(validFlights);
+                    }
+                  }
+                }}
                 className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
                   showFavorites
                     ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
