@@ -263,8 +263,9 @@ function App() {
     <div className={`min-h-screen ${darkMode ? 'dark' : ''} bg-gray-50 dark:bg-gray-900 transition-colors duration-200`}>
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+            {/* Logo e Home */}
+            <div className="flex items-center space-x-4 w-full sm:w-auto justify-between sm:justify-start">
               <button
                 onClick={resetToHome}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -274,19 +275,19 @@ function App() {
               </button>
               <div className="flex items-center">
                 <Plane className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                <h1 className="ml-2 text-2xl font-bold text-gray-900 dark:text-white">
+                <h1 className="ml-2 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                   Flight Tracker
                 </h1>
               </div>
             </div>
 
-            <div className="flex items-center space-x-4">
+            {/* Pulsanti */}
+            <div className="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto justify-center sm:justify-end">
               <button
                 onClick={() => {
                   setShowFavorites(!showFavorites);
-                  setSearchQuery(''); // Reset della search query
+                  setSearchQuery('');
                   if (!showFavorites) {
-                    // Se stiamo aprendo i preferiti, resetta anche i risultati della ricerca
                     const cached = localStorage.getItem(CACHE_KEY);
                     if (cached) {
                       const { data } = JSON.parse(cached);
@@ -295,19 +296,21 @@ function App() {
                     }
                   }
                 }}
-                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                className={`flex items-center px-3 sm:px-4 py-2 rounded-lg transition-colors ${
                   showFavorites
                     ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
                     : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
                 }`}
               >
-                <Heart className={`h-5 w-5 mr-2 ${showFavorites ? 'fill-current' : ''}`} />
-                Favorites ({favorites.length})
+                <Heart className={`h-5 w-5 ${showFavorites ? 'fill-current' : ''} sm:mr-2`} />
+                <span className="hidden sm:inline">Preferiti</span>
+                <span className="ml-1">({favorites.length})</span>
               </button>
+              
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title={darkMode ? 'Light mode' : 'Dark mode'}
+                title={darkMode ? 'Modalità chiara' : 'Modalità scura'}
               >
                 {darkMode ? (
                   <Sun className="h-6 w-6 text-yellow-500" />
