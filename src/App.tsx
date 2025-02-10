@@ -14,7 +14,7 @@ interface FavoriteFlight {
 
 // Aggiungi queste costanti all'inizio del file App.tsx
 const CACHE_KEY = 'flightCache';
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minuti in millisecondi
+const CACHE_DURATION = 15 * 60 * 1000; // 15 minuti in millisecondi
 
 // Aggiungi questa funzione di utilità all'inizio del componente App
 const isValidFlight = (flight: Flight | null): flight is Flight => {
@@ -80,144 +80,167 @@ function App() {
     }
   }, [darkMode]);
 
-  // Modifica la funzione fetchFlights per gestire meglio i dati nulli
+  // Aggiungi memoizzazione per le funzioni utilizzate frequentemente
+  const calculateIsFlightFavorite = useMemo(() => {
+    const favoriteMap = new Map(
+      favorites.filter(isValidFavorite).map(f => [
+        `${f.iata}-${f.departureTime}`,
+        true
+      ])
+    );
+    
+    return (flight: Flight | null): boolean => {
+      if (!isValidFlight(flight)) return false;
+      return favoriteMap.has(`${flight.flight.iata}-${flight.departure.scheduled}`);
+    };
+  }, [favorites]);
+
+  // Ottimizza la funzione fetchFlights
   const fetchFlights = async (query?: string) => {
     setLoading(true);
     setError(null);
     
     try {
+      // Implementa debounce per la ricerca
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const { data, timestamp } = JSON.parse(cached);
         const isValid = Date.now() - timestamp < CACHE_DURATION;
         
         if (isValid) {
-          // Aggiungi controlli di validità prima del filtraggio
           const validFlights = data.filter((f: Flight | null) => 
-            f && f.flight && f.flight.iata && 
-            (!query || f.flight.iata.includes(query.toUpperCase()))
+            isValidFlight(f) && (!query || f.flight.iata.includes(query.toUpperCase()))
           );
-          
           setFlights(validFlights);
           setLoading(false);
           return;
         }
       }
-  
-      const endpoint = query
-        ? `/flights?access_key=${API_KEY}&flight_iata=${query}`
-        : `/flights?access_key=${API_KEY}`;
-      
-      const response = await fetch(`${BASE_URL}${endpoint}`);
-      
-      if (response.status === 429) {
-        throw new Error('Hai raggiunto il limite di richieste API. Riprova più tardi.');
+
+      // Aggiungi abort controller per le richieste API
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      try {
+        const endpoint = query
+          ? `/flights?access_key=${API_KEY}&flight_iata=${query}`
+          : `/flights?access_key=${API_KEY}`;
+        
+        const response = await fetch(`${BASE_URL}${endpoint}`, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.status === 429) {
+          throw new Error('Hai raggiunto il limite di richieste API. Riprova più tardi.');
+        }
+        
+        if (response.status === 500) {
+          throw new Error('Errore del server. Utilizzo dati dalla cache se disponibili.');
+        }
+        
+        if (!response.ok) {
+          throw new Error('Errore nel caricamento dei voli.');
+        }
+        
+        const result = await response.json();
+        if (result.error) {
+          throw new Error(result.error.message || 'Errore nel recupero dei dati dei voli');
+        }
+
+        const uniqueFlights = (result.data || [])
+          .filter((flight: Flight | null) => isValidFlight(flight))
+          .reduce((acc: Flight[], flight: Flight) => {
+            const key = `${flight.flight.iata}-${flight.departure.scheduled}`;
+            if (!acc.find(f => `${f.flight.iata}-${f.departure.scheduled}` === key)) {
+              acc.push(flight);
+            }
+            return acc;
+          }, []);
+
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          data: uniqueFlights,
+          timestamp: Date.now()
+        }));
+
+        setFlights(uniqueFlights);
+      } catch (apiError) {
+        console.error('Errore API:', apiError);
+        // In caso di errore API, usa i dati dalla cache se disponibili
+        if (cached) {
+          const { data } = JSON.parse(cached);
+          const validFlights = data.filter((f: Flight | null) => 
+            isValidFlight(f) && (!query || f.flight.iata.includes(query.toUpperCase()))
+          );
+          setFlights(validFlights);
+          setError('Usando dati dalla cache - ' + (apiError instanceof Error ? apiError.message : 'Errore sconosciuto'));
+        } else {
+          setError(apiError instanceof Error ? apiError.message : 'Errore nel caricamento dei voli');
+          setFlights([]);
+        }
       }
-      
-      if (!response.ok) {
-        throw new Error('Errore nel caricamento dei voli.');
-      }
-      
-      const result = await response.json();
-      if (result.error) {
-        throw new Error(result.error.message || 'Errore nel recupero dei dati dei voli');
-      }
-  
-      // Filtra i duplicati e i voli non validi
-      const uniqueFlights = (result.data || [])
-        .filter((flight: Flight | null) => isValidFlight(flight))
-        .reduce((acc: Flight[], flight: Flight) => {
-          const key = `${flight.flight.iata}-${flight.departure.scheduled}`;
-          if (!acc.find(f => `${f.flight.iata}-${f.departure.scheduled}` === key)) {
-            acc.push(flight);
-          }
-          return acc;
-        }, []);
-  
-      // Salva in cache
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        data: uniqueFlights,
-        timestamp: Date.now()
-      }));
-  
-      setFlights(uniqueFlights);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Errore nel caricamento dei voli';
       setError(errorMessage);
       console.error('Error fetching flights:', err);
-      
-      // In caso di errore, prova a usare i dati in cache
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { data } = JSON.parse(cached);
-        // Filtra i voli non validi dalla cache
-        const validFlights = data.filter((f: Flight | null) => isValidFlight(f));
-        setFlights(validFlights);
-      }
+      setFlights([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // Aggiungi debounce alla funzione handleSearch
+  const debouncedSearch = useMemo(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    
+    return (query: string) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (query.trim()) {
+          fetchFlights(query.trim());
+        }
+      }, 300);
+    };
+  }, []);
+
+  // Usa il debounce nel componente
   const handleSearch = () => {
-    if (searchQuery.trim()) {
-      fetchFlights(searchQuery.trim());
-    }
+    debouncedSearch(searchQuery);
   };
 
   // Modifica anche toggleFavorite
   const toggleFavorite = (flight: Flight | null) => {
-    try {
-      if (!isValidFlight(flight)) {
-        console.warn('Dati volo non validi per i preferiti');
-        return;
-      }
-  
-      setFavorites(prev => {
-        const flightKey: FavoriteFlight = {
-          iata: flight.flight.iata,
-          departure: flight.departure.iata,
-          arrival: flight.arrival.iata,
-          departureTime: flight.departure.scheduled
-        };
-  
-        // Verifica se il volo è già nei preferiti usando isValidFavorite
-        const existingIndex = prev
-          .filter(isValidFavorite)
-          .findIndex(f => 
-            f.iata === flightKey.iata && 
-            f.departureTime === flightKey.departureTime
-          );
-  
-        if (existingIndex >= 0) {
-          // Rimuovi dai preferiti
-          return prev.filter((_, index) => index !== existingIndex);
-        }
-        
-        // Aggiungi ai preferiti
-        return [...prev, flightKey];
-      });
-    } catch (error) {
-      console.error('Errore in toggleFavorite:', error);
+    if (!isValidFlight(flight)) {
+      console.warn('Dati volo non validi per i preferiti');
+      return;
     }
+  
+    const flightKey: FavoriteFlight = {
+      iata: flight.flight.iata,
+      departure: flight.departure.iata,
+      arrival: flight.arrival.iata,
+      departureTime: flight.departure.scheduled
+    };
+  
+    setFavorites(prev => {
+      const isAlreadyFavorite = prev.some(f => 
+        f.iata === flightKey.iata && 
+        f.departureTime === flightKey.departureTime
+      );
+  
+      if (isAlreadyFavorite) {
+        return prev.filter(f => 
+          !(f.iata === flightKey.iata && f.departureTime === flightKey.departureTime)
+        );
+      }
+      
+      return [...prev, flightKey];
+    });
   };
 
   // Modifica la funzione isFlightFavorite
-  const isFlightFavorite = (flight: Flight | null): boolean => {
-    try {
-      if (!isValidFlight(flight)) {
-        return false;
-      }
-  
-      return favorites.filter(isValidFavorite).some(favorite => 
-        favorite.iata === flight.flight.iata && 
-        favorite.departureTime === flight.departure.scheduled
-      );
-    } catch (error) {
-      console.error('Errore in isFlightFavorite:', error);
-      return false;
-    }
-  };
+    // Rimosso codice inutilizzato
 
   // Modifica la funzione resetToHome
   const resetToHome = async () => {
@@ -245,19 +268,35 @@ function App() {
     
     if (showFavorites) {
       return validFlights.filter((flight) => {
-        if (!flight?.flight?.iata || !flight?.departure?.scheduled) {
-          return false;
-        }
-  
         return favorites.some(favorite => 
-          favorite?.iata === flight.flight.iata && 
-          favorite?.departureTime === flight.departure.scheduled
+          isValidFavorite(favorite) &&
+          favorite.iata === flight.flight.iata && 
+          favorite.departureTime === flight.departure.scheduled
         );
       });
     }
     
     return validFlights;
   }, [flights, favorites, showFavorites]);
+
+  // 1. Correzione del rendering condizionale
+  const renderFlightCards = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {displayedFlights.map((flight) => {
+        if (!isValidFlight(flight)) return null;
+        
+        return (
+          <FlightCard
+            key={`${flight.flight.iata}-${flight.departure.scheduled}`}
+            flight={flight}
+            isFavorite={calculateIsFlightFavorite(flight)}
+            onToggleFavorite={() => toggleFavorite(flight)}
+            darkMode={darkMode}
+          />
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className={`min-h-screen ${darkMode ? 'dark' : ''} bg-gray-50 dark:bg-gray-900 transition-colors duration-200`}>
@@ -407,32 +446,7 @@ function App() {
           <div className="flex justify-center items-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayedFlights.map((flight) => {
-              if (!isValidFlight(flight)) return null;
-              
-              return (
-                <FlightCard
-                  key={`${flight.flight.iata}-${flight.departure.scheduled}`}
-                  flight={flight}
-                  isFavorite={isFlightFavorite(flight)}
-                  onToggleFavorite={() => toggleFavorite(flight)}
-                  darkMode={darkMode}
-                />
-              );
-            })}
-            
-            {displayedFlights.length === 0 && showFavorites && (
-              <div className={`col-span-full text-center py-12 ${
-                darkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                <p className="text-lg mb-2">Nessun volo preferito trovato</p>
-                <p className="text-sm">I tuoi voli preferiti appariranno qui quando saranno attivi</p>
-              </div>
-            )}
-          </div>
-        )}
+        ) : renderFlightCards()}
       </main>
     </div>
   );
