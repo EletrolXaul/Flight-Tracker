@@ -39,70 +39,115 @@ const FlightCard: React.FC<FlightCardProps> = ({
     return baseColors[status.toLowerCase() as keyof typeof baseColors] || baseColors.default;
   };
 
+  // Aggiungi funzione per formattare l'orario
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+  };
+
+  // Aggiungi funzione per calcolare la durata del volo
+  const calculateFlightDuration = () => {
+    const departure = new Date(flight.departure.scheduled);
+    const arrival = new Date(flight.arrival.scheduled);
+    const durationMs = arrival.getTime() - departure.getTime();
+    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
+
   return (
-    <div className={`${
-      darkMode ? 'bg-gray-800 shadow-gray-900' : 'bg-white'
-    } rounded-lg shadow-md p-6 relative hover:shadow-lg transition-shadow`}>
+    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-lg p-6 relative`}>
+      {/* Bottone preferiti migliorato */}
       <button
         onClick={onToggleFavorite}
-        className={`absolute top-4 right-4 p-2 rounded-full ${
-          darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-        } transition-colors`}
+        className={`absolute top-4 right-4 p-2 rounded-full transition-all duration-200 
+          ${isFavorite ? 'bg-red-100 dark:bg-red-900' : ''} 
+          hover:scale-110`}
+        title={isFavorite ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}
       >
         <Heart
           className={`w-6 h-6 ${
-            isFavorite ? 'fill-red-500 text-red-500' : darkMode ? 'text-gray-400' : 'text-gray-500'
-          }`}
+            isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'
+          } transition-colors`}
         />
       </button>
 
-      <div className="flex items-center mb-4">
-        <Plane className={`w-6 h-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'} mr-2`} />
-        <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-          Flight {flight.flight.iata}
-        </h3>
+      {/* Intestazione del volo */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Plane className={`w-6 h-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+            <div>
+              <h3 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                {flight.airline.name}
+              </h3>
+              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Flight {flight.flight.iata}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <span
-        className={`inline-block px-3 py-1 rounded-full text-sm font-medium mb-4 ${getStatusColor(
-          flight.flight_status
-        )}`}
-      >
-        {flight.flight_status || 'Unknown'}
-      </span>
+      {/* Status del volo */}
+      <div className="mb-6">
+        <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(flight.flight_status)}`}>
+          {flight.flight_status?.toUpperCase() || 'UNKNOWN'}
+        </span>
+      </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Departure</p>
-          <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {flight.departure.airport}
+      {/* Informazioni sul volo */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="col-span-1">
+          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            Partenza
           </p>
-          <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+          <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
             {flight.departure.iata}
           </p>
           <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            {new Date(flight.departure.scheduled).toLocaleString()}
+            {formatTime(flight.departure.scheduled)}
+          </p>
+          <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            {flight.departure.airport}
           </p>
         </div>
 
-        <div>
-          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Arrival</p>
-          <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {flight.arrival.airport}
+        <div className="col-span-1 flex flex-col items-center justify-center">
+          <div className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            {calculateFlightDuration()}
+          </div>
+          <div className="w-full h-px bg-gray-300 dark:bg-gray-600 my-2 relative">
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+              <Plane className={`w-4 h-4 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+            </div>
+          </div>
+        </div>
+
+        <div className="col-span-1 text-right">
+          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            Arrivo
           </p>
-          <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+          <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
             {flight.arrival.iata}
           </p>
           <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            {new Date(flight.arrival.scheduled).toLocaleString()}
+            {formatTime(flight.arrival.scheduled)}
+          </p>
+          <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            {flight.arrival.airport}
           </p>
         </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-          Operated by {flight.airline.name}
-        </p>
+      {/* Time zone info */}
+      <div className="text-xs text-center mb-4">
+        <span className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          Time zones: {flight.departure.timezone} → {flight.arrival.timezone}
+        </span>
       </div>
     </div>
   );
