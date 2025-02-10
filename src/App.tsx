@@ -1,15 +1,56 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plane, Home, Moon, Sun, Heart, X } from 'lucide-react';
 import SearchBar from './components/SearchBar';
 import FlightCard from './components/FlightCard';
 import type { Flight } from './types/types';
 
+// Modifica l'interfaccia per i preferiti per includere più informazioni
+interface FavoriteFlight {
+  iata: string;
+  departure: string;
+  arrival: string;
+  departureTime: string;
+}
+
+// Aggiungi queste costanti all'inizio del file App.tsx
+const CACHE_KEY = 'flightCache';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minuti in millisecondi
+
+// Aggiungi questa funzione di utilità all'inizio del componente App
+const isValidFlight = (flight: Flight | null): flight is Flight => {
+  return Boolean(
+    flight &&
+    flight.flight?.iata &&
+    flight.departure?.scheduled &&
+    flight.arrival?.scheduled
+  );
+};
+
+// Modifica la funzione isValidFavorite all'inizio del file
+const isValidFavorite = (favorite: FavoriteFlight | null | undefined): favorite is FavoriteFlight => {
+  return Boolean(
+    favorite &&
+    typeof favorite.iata === 'string' &&
+    typeof favorite.departure === 'string' &&
+    typeof favorite.arrival === 'string' &&
+    typeof favorite.departureTime === 'string'
+  );
+};
+
 function App() {
   const [flights, setFlights] = useState<Flight[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    const saved = localStorage.getItem('favoriteFlights');
-    return saved ? JSON.parse(saved) : [];
+  // Modifica l'inizializzazione dello state dei preferiti
+  const [favorites, setFavorites] = useState<FavoriteFlight[]>(() => {
+    try {
+      const saved = localStorage.getItem('favoriteFlights');
+      const parsed = saved ? JSON.parse(saved) : [];
+      // Filtra i preferiti non validi durante l'inizializzazione
+      return Array.isArray(parsed) ? parsed.filter(isValidFavorite) : [];
+    } catch (error) {
+      console.error('Errore nel caricamento dei preferiti:', error);
+      return [];
+    }
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +60,7 @@ function App() {
   });
   const [showFavorites, setShowFavorites] = useState(false);
 
-  const API_KEY = '13a3c773c434fc11884eaac2ebc5fb6d';
+  const API_KEY = 'bf8b143ef1afb98b4679201b017fc64a';
   const BASE_URL = 'https://api.aviationstack.com/v1';
 
   useEffect(() => {
@@ -39,25 +80,74 @@ function App() {
     }
   }, [darkMode]);
 
+  // Modifica la funzione fetchFlights per includere il caching
   const fetchFlights = async (query?: string) => {
     setLoading(true);
     setError(null);
+    
     try {
+      // Controlla se esistono dati in cache validi
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        const isValid = Date.now() - timestamp < CACHE_DURATION;
+        
+        if (isValid) {
+          const filteredFlights = query 
+            ? data.filter((f: Flight) => f.flight.iata.includes(query.toUpperCase()))
+            : data;
+          setFlights(filteredFlights);
+          setLoading(false);
+          return;
+        }
+      }
+  
       const endpoint = query
         ? `/flights?access_key=${API_KEY}&flight_iata=${query}`
         : `/flights?access_key=${API_KEY}`;
       
       const response = await fetch(`${BASE_URL}${endpoint}`);
-      if (!response.ok) throw new Error('Failed to fetch flights');
       
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message || 'Failed to fetch flight data');
+      if (response.status === 429) {
+        throw new Error('Hai raggiunto il limite di richieste API. Riprova più tardi.');
       }
-      setFlights(data.data || []);
+      
+      if (!response.ok) {
+        throw new Error('Errore nel caricamento dei voli.');
+      }
+      
+      const result = await response.json();
+      if (result.error) {
+        throw new Error(result.error.message || 'Errore nel recupero dei dati dei voli');
+      }
+  
+      // Filtra i duplicati
+      const uniqueFlights = (result.data || []).reduce((acc: Flight[], flight: Flight) => {
+        const key = `${flight.flight.iata}-${flight.departure.scheduled}`;
+        if (!acc.find(f => `${f.flight.iata}-${f.departure.scheduled}` === key)) {
+          acc.push(flight);
+        }
+        return acc;
+      }, []);
+  
+      // Salva in cache
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        data: uniqueFlights,
+        timestamp: Date.now()
+      }));
+  
+      setFlights(uniqueFlights);
     } catch (err) {
-      setError('Failed to fetch flight data. Please try again later.');
+      const errorMessage = err instanceof Error ? err.message : 'Errore nel caricamento dei voli';
+      setError(errorMessage);
       console.error('Error fetching flights:', err);
+      
+      // In caso di errore, prova a usare i dati in cache anche se scaduti
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data } = JSON.parse(cached);
+        setFlights(data);
+      }
     } finally {
       setLoading(false);
     }
@@ -69,12 +159,58 @@ function App() {
     }
   };
 
-  const toggleFavorite = (flightNumber: string) => {
-    setFavorites(prev =>
-      prev.includes(flightNumber)
-        ? prev.filter(f => f !== flightNumber)
-        : [...prev, flightNumber]
-    );
+  // Modifica anche toggleFavorite
+  const toggleFavorite = (flight: Flight | null) => {
+    try {
+      if (!isValidFlight(flight)) {
+        console.warn('Dati volo non validi per i preferiti');
+        return;
+      }
+  
+      setFavorites(prev => {
+        const flightKey: FavoriteFlight = {
+          iata: flight.flight.iata,
+          departure: flight.departure.iata,
+          arrival: flight.arrival.iata,
+          departureTime: flight.departure.scheduled
+        };
+  
+        // Verifica se il volo è già nei preferiti usando isValidFavorite
+        const existingIndex = prev
+          .filter(isValidFavorite)
+          .findIndex(f => 
+            f.iata === flightKey.iata && 
+            f.departureTime === flightKey.departureTime
+          );
+  
+        if (existingIndex >= 0) {
+          // Rimuovi dai preferiti
+          return prev.filter((_, index) => index !== existingIndex);
+        }
+        
+        // Aggiungi ai preferiti
+        return [...prev, flightKey];
+      });
+    } catch (error) {
+      console.error('Errore in toggleFavorite:', error);
+    }
+  };
+
+  // Modifica la funzione isFlightFavorite
+  const isFlightFavorite = (flight: Flight | null): boolean => {
+    try {
+      if (!isValidFlight(flight)) {
+        return false;
+      }
+  
+      return favorites.filter(isValidFavorite).some(favorite => 
+        favorite.iata === flight.flight.iata && 
+        favorite.departureTime === flight.departure.scheduled
+      );
+    } catch (error) {
+      console.error('Errore in isFlightFavorite:', error);
+      return false;
+    }
   };
 
   const resetToHome = () => {
@@ -83,9 +219,25 @@ function App() {
     fetchFlights();
   };
 
-  const displayedFlights = showFavorites
-    ? flights.filter(flight => favorites.includes(flight.flight.iata))
-    : flights;
+  // Modifica la funzione displayedFlights
+  const displayedFlights = useMemo(() => {
+    const validFlights = flights.filter(isValidFlight);
+    
+    if (showFavorites) {
+      return validFlights.filter((flight) => {
+        if (!flight?.flight?.iata || !flight?.departure?.scheduled) {
+          return false;
+        }
+  
+        return favorites.some(favorite => 
+          favorite?.iata === flight.flight.iata && 
+          favorite?.departureTime === flight.departure.scheduled
+        );
+      });
+    }
+    
+    return validFlights;
+  }, [flights, favorites, showFavorites]);
 
   return (
     <div className={`min-h-screen ${darkMode ? 'dark' : ''} bg-gray-50 dark:bg-gray-900 transition-colors duration-200`}>
@@ -165,9 +317,9 @@ function App() {
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {favorites.map(flightNumber => (
+                {favorites.filter(isValidFavorite).map(favorite => (
                   <div
-                    key={flightNumber}
+                    key={`${favorite.iata}-${favorite.departureTime}`}
                     className={`flex items-center px-3 py-2 rounded-full ${
                       darkMode
                         ? 'bg-gray-700 text-white'
@@ -175,10 +327,24 @@ function App() {
                     }`}
                   >
                     <Plane className="h-4 w-4 mr-2" />
-                    <span>{flightNumber}</span>
+                    <span>{favorite.iata}</span>
+                    <span className="mx-2 text-xs">
+                      ({favorite.departure} → {favorite.arrival})
+                    </span>
                     <button
-                      onClick={() => toggleFavorite(flightNumber)}
+                      onClick={() => {
+                        const correspondingFlight = flights.find(f => 
+                          isValidFlight(f) && 
+                          f.flight.iata === favorite.iata && 
+                          f.departure.scheduled === favorite.departureTime
+                        );
+                        
+                        if (correspondingFlight) {
+                          toggleFavorite(correspondingFlight);
+                        }
+                      }}
                       className="ml-2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      title="Rimuovi dai preferiti"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -208,21 +374,26 @@ function App() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayedFlights.map((flight) => (
-              <FlightCard
-                key={`${flight.flight.iata}-${flight.departure.scheduled}`}
-                flight={flight}
-                isFavorite={favorites.includes(flight.flight.iata)}
-                onToggleFavorite={() => toggleFavorite(flight.flight.iata)}
-                darkMode={darkMode}
-              />
-            ))}
+            {displayedFlights.map((flight) => {
+              if (!isValidFlight(flight)) return null;
+              
+              return (
+                <FlightCard
+                  key={`${flight.flight.iata}-${flight.departure.scheduled}`}
+                  flight={flight}
+                  isFavorite={isFlightFavorite(flight)}
+                  onToggleFavorite={() => toggleFavorite(flight)}
+                  darkMode={darkMode}
+                />
+              );
+            })}
+            
             {displayedFlights.length === 0 && showFavorites && (
               <div className={`col-span-full text-center py-12 ${
                 darkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>
-                <p className="text-lg mb-2">No favorite flights found</p>
-                <p className="text-sm">Your favorite flights will appear here when they are active</p>
+                <p className="text-lg mb-2">Nessun volo preferito trovato</p>
+                <p className="text-sm">I tuoi voli preferiti appariranno qui quando saranno attivi</p>
               </div>
             )}
           </div>
