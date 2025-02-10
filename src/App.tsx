@@ -80,23 +80,25 @@ function App() {
     }
   }, [darkMode]);
 
-  // Modifica la funzione fetchFlights per includere il caching
+  // Modifica la funzione fetchFlights per gestire meglio i dati nulli
   const fetchFlights = async (query?: string) => {
     setLoading(true);
     setError(null);
     
     try {
-      // Controlla se esistono dati in cache validi
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const { data, timestamp } = JSON.parse(cached);
         const isValid = Date.now() - timestamp < CACHE_DURATION;
         
         if (isValid) {
-          const filteredFlights = query 
-            ? data.filter((f: Flight) => f.flight.iata.includes(query.toUpperCase()))
-            : data;
-          setFlights(filteredFlights);
+          // Aggiungi controlli di validità prima del filtraggio
+          const validFlights = data.filter((f: Flight | null) => 
+            f && f.flight && f.flight.iata && 
+            (!query || f.flight.iata.includes(query.toUpperCase()))
+          );
+          
+          setFlights(validFlights);
           setLoading(false);
           return;
         }
@@ -121,14 +123,16 @@ function App() {
         throw new Error(result.error.message || 'Errore nel recupero dei dati dei voli');
       }
   
-      // Filtra i duplicati
-      const uniqueFlights = (result.data || []).reduce((acc: Flight[], flight: Flight) => {
-        const key = `${flight.flight.iata}-${flight.departure.scheduled}`;
-        if (!acc.find(f => `${f.flight.iata}-${f.departure.scheduled}` === key)) {
-          acc.push(flight);
-        }
-        return acc;
-      }, []);
+      // Filtra i duplicati e i voli non validi
+      const uniqueFlights = (result.data || [])
+        .filter((flight: Flight | null) => isValidFlight(flight))
+        .reduce((acc: Flight[], flight: Flight) => {
+          const key = `${flight.flight.iata}-${flight.departure.scheduled}`;
+          if (!acc.find(f => `${f.flight.iata}-${f.departure.scheduled}` === key)) {
+            acc.push(flight);
+          }
+          return acc;
+        }, []);
   
       // Salva in cache
       localStorage.setItem(CACHE_KEY, JSON.stringify({
@@ -142,11 +146,13 @@ function App() {
       setError(errorMessage);
       console.error('Error fetching flights:', err);
       
-      // In caso di errore, prova a usare i dati in cache anche se scaduti
+      // In caso di errore, prova a usare i dati in cache
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const { data } = JSON.parse(cached);
-        setFlights(data);
+        // Filtra i voli non validi dalla cache
+        const validFlights = data.filter((f: Flight | null) => isValidFlight(f));
+        setFlights(validFlights);
       }
     } finally {
       setLoading(false);
@@ -213,10 +219,24 @@ function App() {
     }
   };
 
-  const resetToHome = () => {
-    setSearchQuery('');
-    setShowFavorites(false);
-    fetchFlights();
+  // Modifica la funzione resetToHome
+  const resetToHome = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setSearchQuery('');
+      setShowFavorites(false);
+      
+      // Rimuovi i dati dalla cache per forzare un nuovo caricamento
+      localStorage.removeItem(CACHE_KEY);
+      
+      // Fetcha nuovi dati
+      await fetchFlights();
+    } catch (error) {
+      console.error('Errore nel reset:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Modifica la funzione displayedFlights
